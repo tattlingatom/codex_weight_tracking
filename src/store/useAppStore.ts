@@ -1,4 +1,6 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { Entry, PooTime, Settings, WeighTime } from '../types/models';
 import { toLocalISODate } from '../utils/date';
 
@@ -8,11 +10,10 @@ interface CheckInInput {
   weighTime: WeighTime;
   pooTime: PooTime;
 }
-interface State {
+
+interface AppState {
   entries: Entry[];
   settings: Settings;
-  hydrated: boolean;
-  hydrate: () => void;
   saveEntry: (input: CheckInInput) => void;
   deleteEntry: (id: string) => void;
   setTargetWeight: (value: number | null) => void;
@@ -21,77 +22,79 @@ interface State {
   seedIfEmpty: () => void;
 }
 
-const KEY = 'weight-tracker-web-v1';
-const defaultSettings: Settings = { targetWeightKg: null, unit: 'kg', onboardingCompleted: false };
-const now = () => new Date().toISOString();
+const nowISO = () => new Date().toISOString();
+
+const defaultSettings: Settings = {
+  targetWeightKg: null,
+  unit: 'kg',
+  onboardingCompleted: false,
+};
 
 const sampleData = (): Entry[] => {
   const today = new Date();
-  return Array.from({ length: 18 }).map((_, i) => {
-    const d = new Date(today);
-    d.setDate(today.getDate() - (17 - i));
-    const date = toLocalISODate(d);
+  return Array.from({ length: 18 }).map((_, idx) => {
+    const day = new Date(today);
+    day.setDate(today.getDate() - (17 - idx));
+    const date = toLocalISODate(day);
+    const weightKg = Number((79.8 - idx * 0.12 + ((idx % 3) - 1) * 0.25).toFixed(1));
+    const weighTime: WeighTime = idx % 3 === 0 ? 'morning' : idx % 3 === 1 ? 'afternoon' : 'evening';
+    const pooTime: PooTime = idx % 4 === 0 ? 'none' : 'morning';
     return {
       id: `seed-${date}`,
       date,
-      weightKg: Number((80 - i * 0.12 + ((i % 4) - 2) * 0.15).toFixed(1)),
-      weighTime: i % 3 === 0 ? 'morning' : i % 3 === 1 ? 'afternoon' : 'evening',
-      pooTime: i % 4 === 0 ? 'none' : 'morning',
-      createdAt: now(),
-      updatedAt: now(),
+      weightKg,
+      weighTime,
+      pooTime,
+      createdAt: nowISO(),
+      updatedAt: nowISO(),
     };
   });
 };
 
-const persist = (entries: Entry[], settings: Settings) => {
-  localStorage.setItem(KEY, JSON.stringify({ entries, settings }));
-};
+export const useAppStore = create<AppState>()(
+  persist(
+    (set, get) => ({
+      entries: [],
+      settings: defaultSettings,
+      saveEntry: (input) =>
+        set((state) => {
+          const existing = state.entries.find((entry) => entry.date === input.date);
+          if (existing) {
+            return {
+              entries: state.entries
+                .map((entry) =>
+                  entry.date === input.date
+                    ? { ...entry, ...input, updatedAt: nowISO() }
+                    : entry,
+                )
+                .sort((a, b) => a.date.localeCompare(b.date)),
+            };
+          }
 
-export const useAppStore = create<State>((set, get) => ({
-  entries: [],
-  settings: defaultSettings,
-  hydrated: false,
-  hydrate: () => {
-    const raw = localStorage.getItem(KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as { entries: Entry[]; settings: Settings };
-      set({ entries: parsed.entries ?? [], settings: parsed.settings ?? defaultSettings, hydrated: true });
-    } else set({ hydrated: true });
-  },
-  saveEntry: (input) => set((s) => {
-    const found = s.entries.find((e) => e.date === input.date);
-    const next = found
-      ? s.entries.map((e) => (e.date === input.date ? { ...e, ...input, updatedAt: now() } : e))
-      : [...s.entries, { id: `${input.date}-${Math.random().toString(36).slice(2, 8)}`, ...input, createdAt: now(), updatedAt: now() }];
-    const sorted = next.sort((a, b) => a.date.localeCompare(b.date));
-    persist(sorted, s.settings);
-    return { entries: sorted };
-  }),
-  deleteEntry: (id) => set((s) => {
-    const entries = s.entries.filter((e) => e.id !== id);
-    persist(entries, s.settings);
-    return { entries };
-  }),
-  setTargetWeight: (value) => set((s) => {
-    const settings = { ...s.settings, targetWeightKg: value };
-    persist(s.entries, settings);
-    return { settings };
-  }),
-  completeOnboarding: () => set((s) => {
-    const settings = { ...s.settings, onboardingCompleted: true };
-    persist(s.entries, settings);
-    return { settings };
-  }),
-  resetAllData: () => {
-    localStorage.removeItem(KEY);
-    set({ entries: [], settings: defaultSettings });
-  },
-  seedIfEmpty: () => {
-    const state = get();
-    if (import.meta.env.DEV && state.entries.length === 0) {
-      const entries = sampleData();
-      persist(entries, state.settings);
-      set({ entries });
-    }
-  },
-}));
+          const created: Entry = {
+            id: `${input.date}-${Math.random().toString(36).slice(2, 8)}`,
+            ...input,
+            createdAt: nowISO(),
+            updatedAt: nowISO(),
+          };
+
+          return { entries: [...state.entries, created].sort((a, b) => a.date.localeCompare(b.date)) };
+        }),
+      deleteEntry: (id) => set((state) => ({ entries: state.entries.filter((entry) => entry.id !== id) })),
+      setTargetWeight: (value) =>
+        set((state) => ({ settings: { ...state.settings, targetWeightKg: value } })),
+      completeOnboarding: () =>
+        set((state) => ({ settings: { ...state.settings, onboardingCompleted: true } })),
+      resetAllData: () => set({ entries: [], settings: defaultSettings }),
+      seedIfEmpty: () => {
+        if (__DEV__ && get().entries.length === 0) {
+          set({ entries: sampleData() });
+        }
+      },
+    }),
+    {
+      name: 'weight-tracking-store',
+      storage: createJSONStorage(() => AsyncStorage),
+    },
+  ),
+);

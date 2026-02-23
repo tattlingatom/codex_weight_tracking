@@ -3,7 +3,7 @@ export type PooTime = 'none' | 'morning' | 'afternoon' | 'evening';
 
 export interface Entry {
   id: string;
-  date: string;
+  date: string; // YYYY-MM-DD local
   weightKg: number;
   weighTime: WeighTime;
   pooTime: PooTime;
@@ -31,6 +31,10 @@ export interface ProjectionResult {
   currentTrendWeight: number | null;
   projectedDate: string | null;
   daysToTarget: number | null;
-  confidenceWindow: { likely: string; earlier: string; later: string } | null;
+  confidenceWindow: {
+    likely: string;
+    earlier: string;
+    later: string;
+  } | null;
   insight: string;
 }

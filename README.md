@@ -1,45 +1,96 @@
-# Weight Trend Tracker (Web App)
+# Weight Trend Tracker (Expo + TypeScript)
 
-A very simple **mobile-friendly web app** for logging daily weight + timing and projecting target date using smoothed trend data.
-
-## Why this version
-This is now a **web app** (React + TypeScript + Vite), so you can run it and open it in Safari on your iPhone via local network URL.
+Simple personal weight-tracking app focused on **quick daily check-in**, **smoothed trend**, and **target projection**.
 
 ## Features
-- Fast daily check-in: date, weight, weigh-time bucket, poo-time bucket.
-- Auto-select weigh-time bucket by local clock (morning/afternoon/evening).
-- Edit previous day by choosing date in Home or editing in Progress.
-- Target weight setup and updates.
-- Dashboard stats: latest weight, trend weight, weekly trend rate, projected date, days remaining, insight.
-- Progress chart with raw and trend lines + marker styling.
-- Time filters: 14d / 30d / All.
-- Local persistence with `localStorage`.
-- CSV export + reset data.
-- Dev sample data seeding.
+
+- Daily check-in (weight, weigh time, poo time) with local date auto-filled.
+- Auto default weigh-time bucket by current local hour.
+- Edit/delete previous entries from Progress screen.
+- Local persistence via Zustand + AsyncStorage.
+- Trend EWMA smoothing with reliability weighting.
+- Weighted linear regression slope over recent trend data (21-day preference).
+- Projection card with insight and estimated target date.
+- Progress chart showing raw and trend lines (14d / 30d / all).
+- Onboarding flow to set target weight.
+- Settings for target update, reset data, and CSV preview export.
+- Dev-mode seed sample data.
 
 ## Project structure
-- `src/App.tsx`: shell and tabs
-- `src/screens/*`: onboarding/home/progress/settings
-- `src/store/useAppStore.ts`: typed state + local persistence
-- `src/utils/trend.ts`: reliability + EWMA
-- `src/utils/projection.ts`: weighted regression + projection
-- `src/utils/trend.test.ts`: unit tests
 
-## Run
+```txt
+.
+├── App.tsx
+├── src
+│   ├── components
+│   │   └── SegmentedControl.tsx
+│   ├── screens
+│   │   ├── HomeScreen.tsx
+│   │   ├── OnboardingScreen.tsx
+│   │   ├── ProgressScreen.tsx
+│   │   └── SettingsScreen.tsx
+│   ├── store
+│   │   └── useAppStore.ts
+│   ├── types
+│   │   └── models.ts
+│   └── utils
+│       ├── date.ts
+│       ├── projection.ts
+│       ├── trend.ts
+│       └── trend.test.ts
+└── README.md
+```
+
+## Setup / run
+
 ```bash
 npm install
-npm run dev
+npm run start
 ```
-Then open the URL shown by Vite from your iPhone (same Wi‑Fi), e.g. `http://<your-computer-ip>:5173`.
 
-## Tweak parameters
-- Reliability weights and poo adjustments: `src/utils/trend.ts`
-- EWMA base alpha (`alphaBase`): `src/utils/trend.ts`
-- Data sufficiency, slope threshold, and confidence window logic: `src/utils/projection.ts`
+Then open in Expo Go or simulator.
+
+Run unit tests:
+
+```bash
+npm run test
+```
+
+## Math / logic details
+
+### Reliability scoring
+Configured in `src/utils/trend.ts`:
+
+- `weighBase` for morning/afternoon/evening.
+- poo adjustment rules.
+- clamped to `[0.4, 1.0]`.
+
+### EWMA smoothing
+Configured in `buildTrendSeries` in `src/utils/trend.ts`:
+
+- `alphaBase = 0.25`
+- `alpha = alphaBase * reliability`
+
+### Slope + projection
+Configured in `src/utils/projection.ts`:
+
+- Weighted regression (w = reliability)
+- 21-day preferred window
+- data sufficiency rules (>=10 entries and >=7-day span)
+- projection threshold (`slope < -0.01` kg/day)
+- simple confidence window using 14d and 21d slopes
+
+## Parameters to tweak
+
+- Reliability base/adjustments: `src/utils/trend.ts` (`weighBase`, adjustment logic).
+- EWMA smoothing sensitivity: `alphaBase` in `buildTrendSeries`.
+- Data sufficiency and projection threshold: `src/utils/projection.ts`.
+- Confidence-window method: `createProjection` in `src/utils/projection.ts`.
 
 ## Future improvements
-1. PWA install support + offline cache.
-2. Optional reminders/notifications.
-3. Better confidence bands (uncertainty visualization).
-4. Personalized reliability calibration by historical variance.
-5. Cloud sync / backup.
+
+1. Personalized reliability calibration by user history (time-of-day bias).
+2. Better confidence bands (bootstrap or residual-based intervals).
+3. Reminder notifications for daily check-in.
+4. Real CSV file export/share (instead of alert preview).
+5. Optional trend decomposition (water fluctuation vs trend estimate).
